@@ -14,6 +14,7 @@ from raft import RAFT
 from utils import flow_viz
 from utils.utils import InputPadder
 
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 os.environ["HF_HOME"] = "./cache/hf"
 os.environ['TORCH_HOME']='./cache/torch'
 
@@ -35,9 +36,9 @@ def process_video(args):
     frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
     output_video = cv2.VideoWriter(f'{video_name}_flow.mp4', fourcc, fps, (width, height))
     # Save each frame as image
-    # output_dir = f'{video_name}_depth'
-    # if not os.path.exists(output_dir):
-    #     os.mkdir(output_dir)
+    output_dir = f'{video_name}_flow'
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
 
     model = torch.nn.DataParallel(RAFT(args))
     model.load_state_dict(torch.load(args.model))
@@ -53,8 +54,6 @@ def process_video(args):
         if video.isOpened():
             success, img2 = video.read()
             img2 = img2tensor(img2)
-        padder = InputPadder(img1.shape)
-        img1, img2 = padder.pad(img1, img2)
         while video.isOpened():
             t0 = time.time()
             flow_low, flow_up = model(img1, img2, iters=20, test_mode=True)
@@ -64,37 +63,32 @@ def process_video(args):
             flow_up = np.uint8(flow_up)
             flow_up = cv2.cvtColor(flow_up, cv2.COLOR_RGB2BGR)
 
-            # cv2.imshow('flow', flow_up)
-            # if cv2.waitKey(30) & 0xFF == ord('q'):
-            #     break
+            # Save each frame as image
+            cv2.imwrite(os.path.join(output_dir, f'{i}.png'), flow_up)
+
             output_video.write(flow_up)
             i += 1
 
             t1 = time.time()
             print(f"{i}/{frame_count}, time: {t1-t0:.4f}")
-            # model, time: 0.0765
-            # permute, time: 0.0798
-            # cpu.numpy, time: 0.1265
-            # flow_to_image, time: 0.0338
-            # uint8, time: 0.0000
-            # cvtColor, time: 0.0010
-            # time: 0.2379
-            
+
+            # realtime display
+            # cv2.imshow('flow', flow_up)
+            # if cv2.waitKey(30) & 0xFF == ord('q'):
+            #     break
+
             img1 = img2
             success, img2 = video.read()
             if not success:
                 break
             img2 = img2tensor(img2)
-            padder = InputPadder(img1.shape)
-            img1, img2 = padder.pad(img1, img2)
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-model', 
                     default="models/raft-things.pth", 
                     help="restore checkpoint")
 parser.add_argument('-path', 
-                    default="../assets/fred-360p.mp4", 
+                    default="../assets/video.mp4", 
                     help="dataset for evaluation")
 parser.add_argument('-small', 
                     action='store_true', 
@@ -110,4 +104,4 @@ args = parser.parse_args()
 t0 = time.time()
 process_video(args)
 t1 = time.time()
-print(f"time: {t1-t0:.4f}")
+print(f"total time: {t1-t0:.4f}")
